@@ -47,7 +47,7 @@ func clientStore(domain string, public bool) oauth2.ClientStore {
 	clientStore.Set(clientID, &models.Client{
 		ID:     clientID,
 		Secret: secret,
-		Domain: domain,
+		Domain: []string{domain},
 		Public: public,
 	})
 	return clientStore

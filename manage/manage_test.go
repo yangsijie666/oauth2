@@ -24,7 +24,7 @@ func TestManager(t *testing.T) {
 		_ = clientStore.Set("1", &models.Client{
 			ID:     "1",
 			Secret: "11",
-			Domain: "http://localhost",
+			Domain: []string{"http://localhost"},
 		})
 		manager.MapClientStorage(clientStore)
 
