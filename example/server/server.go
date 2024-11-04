@@ -58,7 +58,7 @@ func main() {
 	clientStore.Set(idvar, &models.Client{
 		ID:     idvar,
 		Secret: secretvar,
-		Domain: domainvar,
+		Domain: []string{domainvar},
 	})
 	manager.MapClientStorage(clientStore)
 

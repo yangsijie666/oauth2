@@ -10,7 +10,7 @@ type (
 	ClientInfo interface {
 		GetID() string
 		GetSecret() string
-		GetDomain() string
+		GetDomain() []string
 		IsPublic() bool
 		GetUserID() string
 	}

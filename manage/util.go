@@ -10,23 +10,25 @@ import (
 
 type (
 	// ValidateURIHandler validates that redirectURI is contained in baseURI
-	ValidateURIHandler      func(baseURI, redirectURI string) error
+	ValidateURIHandler      func(baseURI []string, redirectURI string) error
 	ExtractExtensionHandler func(*oauth2.TokenGenerateRequest, oauth2.ExtendableTokenInfo)
 )
 
 // DefaultValidateURI validates that redirectURI is contained in baseURI
-func DefaultValidateURI(baseURI string, redirectURI string) error {
-	base, err := url.Parse(baseURI)
-	if err != nil {
-		return err
-	}
+func DefaultValidateURI(baseURI []string, redirectURI string) error {
+	for i := range baseURI {
+		base, err := url.Parse(baseURI[i])
+		if err != nil {
+			return err
+		}
 
-	redirect, err := url.Parse(redirectURI)
-	if err != nil {
-		return err
+		redirect, err := url.Parse(redirectURI)
+		if err != nil {
+			return err
+		}
+		if strings.HasSuffix(redirect.Host, base.Host) {
+			return nil
+		}
 	}
-	if !strings.HasSuffix(redirect.Host, base.Host) {
-		return errors.ErrInvalidRedirectURI
-	}
-	return nil
+	return errors.ErrInvalidRedirectURI
 }
