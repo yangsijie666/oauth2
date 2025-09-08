@@ -372,6 +372,19 @@ func (s *Server) ValidationTokenRequest(r *http.Request) (oauth2.GrantType, *oau
 		if tgr.Refresh == "" {
 			return "", nil, errors.ErrInvalidRequest
 		}
+	case oauth2.TokenExchange:
+		tgr.SubjectToken = r.FormValue("subject_token")
+		tgr.SubjectTokenType = r.FormValue("subject_token_type")
+		tgr.ActorToken = r.FormValue("actor_token")
+		tgr.ActorTokenType = r.FormValue("actor_token_type")
+		tgr.RequestedTokenType = r.FormValue("requested_token_type")
+		tgr.Audience = r.FormValue("audience")
+		tgr.Resource = r.FormValue("resource")
+		tgr.Scope = r.FormValue("scope")
+
+		if tgr.SubjectToken == "" || tgr.SubjectTokenType == "" {
+			return "", nil, errors.ErrInvalidRequest
+		}
 	}
 	return gt, tgr, nil
 }
@@ -387,10 +400,9 @@ func (s *Server) CheckGrantType(gt oauth2.GrantType) bool {
 }
 
 // GetAccessToken access token
-func (s *Server) GetAccessToken(ctx context.Context, gt oauth2.GrantType, tgr *oauth2.TokenGenerateRequest) (oauth2.TokenInfo,
-	error) {
+func (s *Server) GetAccessToken(ctx context.Context, gt oauth2.GrantType, tgr *oauth2.TokenGenerateRequest) (oauth2.TokenInfo, error) {
 	if allowed := s.CheckGrantType(gt); !allowed {
-		return nil, errors.ErrUnauthorizedClient
+		return nil, errors.ErrUnsupportedGrantType
 	}
 
 	if fn := s.ClientAuthorizedHandler; fn != nil {
@@ -469,6 +481,8 @@ func (s *Server) GetAccessToken(ctx context.Context, gt oauth2.GrantType, tgr *o
 			return nil, err
 		}
 		return ti, nil
+	case oauth2.TokenExchange:
+		return s.Manager.ExchangeToken(ctx, tgr)
 	}
 
 	return nil, errors.ErrUnsupportedGrantType

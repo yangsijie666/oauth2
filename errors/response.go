@@ -47,6 +47,7 @@ var (
 	ErrCodeChallengeRquired           = errors.New("invalid_request")
 	ErrUnsupportedCodeChallengeMethod = errors.New("invalid_request")
 	ErrInvalidCodeChallengeLen        = errors.New("invalid_request")
+	ErrUnsupportedTokenType           = errors.New("invalid_request")
 )
 
 // Descriptions error description
@@ -64,6 +65,7 @@ var Descriptions = map[error]string{
 	ErrCodeChallengeRquired:           "PKCE is required. code_challenge is missing",
 	ErrUnsupportedCodeChallengeMethod: "Selected code_challenge_method not supported",
 	ErrInvalidCodeChallengeLen:        "Code challenge length must be between 43 and 128 charachters long",
+	ErrUnsupportedTokenType:           "Token type is not supported",
 }
 
 // StatusCodes response error HTTP status code
@@ -81,4 +83,5 @@ var StatusCodes = map[error]int{
 	ErrCodeChallengeRquired:           400,
 	ErrUnsupportedCodeChallengeMethod: 400,
 	ErrInvalidCodeChallengeLen:        400,
+	ErrUnsupportedTokenType:           400,
 }

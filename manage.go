@@ -20,6 +20,14 @@ type TokenGenerateRequest struct {
 	CodeVerifier        string
 	AccessTokenExp      time.Duration
 	Request             *http.Request
+	// Token Exchange parameters (RFC 8693)
+	SubjectToken       string // The token to be exchanged
+	SubjectTokenType   string // Type of the subject token
+	ActorToken         string // Optional actor token
+	ActorTokenType     string // Type of the actor token
+	RequestedTokenType string // Desired token type
+	Audience           string // Target audience
+	Resource           string // Target resource
 }
 
 // Manager authorization management interface
@@ -47,4 +55,7 @@ type Manager interface {
 
 	// according to the refresh token for corresponding token information
 	LoadRefreshToken(ctx context.Context, refresh string) (ti TokenInfo, err error)
+
+	// exchange token (RFC 8693)
+	ExchangeToken(ctx context.Context, tgr *TokenGenerateRequest) (ti TokenInfo, err error)
 }
