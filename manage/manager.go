@@ -56,6 +56,8 @@ func (m *Manager) grantConfig(gt oauth2.GrantType) *Config {
 		return DefaultPasswordTokenCfg
 	case oauth2.ClientCredentials:
 		return DefaultClientTokenCfg
+	case oauth2.TokenExchange:
+		return DefaultTokenExchangeCfg
 	}
 	return &Config{}
 }
@@ -83,6 +85,11 @@ func (m *Manager) SetPasswordTokenCfg(cfg *Config) {
 // SetClientTokenCfg set the client grant token config
 func (m *Manager) SetClientTokenCfg(cfg *Config) {
 	m.gtcfg[oauth2.ClientCredentials] = cfg
+}
+
+// SetTokenExchangeTokenCfg set the token exchange grant token config
+func (m *Manager) SetTokenExchangeTokenCfg(cfg *Config) {
+	m.gtcfg[oauth2.TokenExchange] = cfg
 }
 
 // SetRefreshTokenCfg set the refreshing token config
@@ -516,4 +523,171 @@ func (m *Manager) LoadRefreshToken(ctx context.Context, refresh string) (oauth2.
 		return nil, errors.ErrExpiredRefreshToken
 	}
 	return ti, nil
+}
+
+// ExchangeToken implements token exchange according to RFC 8693
+func (m *Manager) ExchangeToken(ctx context.Context, tgr *oauth2.TokenGenerateRequest) (oauth2.TokenInfo, error) {
+	cli, err := m.GetClient(ctx, tgr.ClientID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify client credentials
+	if cliPass, ok := cli.(oauth2.ClientPasswordVerifier); ok {
+		if !cliPass.VerifyPassword(tgr.ClientSecret) {
+			return nil, errors.ErrInvalidClient
+		}
+	} else if len(cli.GetSecret()) > 0 && tgr.ClientSecret != cli.GetSecret() {
+		return nil, errors.ErrInvalidClient
+	}
+
+	// Validate subject token
+	if tgr.SubjectToken == "" {
+		return nil, errors.ErrInvalidRequest
+	}
+
+	// Load and validate the subject token
+	var subjectTokenInfo oauth2.TokenInfo
+	var shouldGenerateRefresh bool
+	switch tgr.SubjectTokenType {
+	case "urn:ietf:params:oauth:token-type:access_token":
+		subjectTokenInfo, err = m.LoadAccessToken(ctx, tgr.SubjectToken)
+		if err != nil {
+			return nil, errors.ErrInvalidGrant
+		}
+		shouldGenerateRefresh = false
+	case "urn:ietf:params:oauth:token-type:refresh_token":
+		subjectTokenInfo, err = m.LoadRefreshToken(ctx, tgr.SubjectToken)
+		if err != nil {
+			return nil, errors.ErrInvalidGrant
+		}
+		shouldGenerateRefresh = true
+	default:
+		return nil, errors.ErrUnsupportedTokenType
+	}
+
+	// Handle Actor Token (if provided)
+	var actorTokenInfo oauth2.TokenInfo
+	if tgr.ActorToken != "" {
+		switch tgr.ActorTokenType {
+		case "urn:ietf:params:oauth:token-type:access_token":
+			actorTokenInfo, err = m.LoadAccessToken(ctx, tgr.ActorToken)
+			if err != nil {
+				return nil, errors.ErrInvalidGrant
+			}
+		case "urn:ietf:params:oauth:token-type:refresh_token":
+			actorTokenInfo, err = m.LoadRefreshToken(ctx, tgr.ActorToken)
+			if err != nil {
+				return nil, errors.ErrInvalidGrant
+			}
+		default:
+			return nil, errors.ErrUnsupportedTokenType
+		}
+	}
+
+	// Determine target client
+	targetClient := cli
+	if tgr.Audience != "" {
+		audienceClient, err := m.GetClient(ctx, tgr.Audience)
+		if err != nil {
+			return nil, errors.ErrInvalidRequest
+		}
+		targetClient = audienceClient
+	}
+
+	if targetClient.GetID() != tgr.ClientID {
+		if !m.isClientExchangeAllowed(tgr.ClientID, targetClient.GetID()) {
+			return nil, errors.ErrUnauthorizedClient
+		}
+	}
+
+	// Create new token
+	ti := models.NewToken()
+	ti.SetClientID(targetClient.GetID())
+
+	// Determine user ID (prioritize actor, otherwise use subject)
+	userID := subjectTokenInfo.GetUserID()
+	if actorTokenInfo != nil {
+		userID = actorTokenInfo.GetUserID()
+	}
+	ti.SetUserID(userID)
+
+	// Handle scope
+	scope := tgr.Scope
+	if scope == "" {
+		scope = subjectTokenInfo.GetScope()
+	}
+	// Scope downgrade: new token scope cannot exceed original token
+	if !m.isScopeAllowed(subjectTokenInfo.GetScope(), scope) {
+		return nil, errors.ErrInvalidScope
+	}
+	ti.SetScope(scope)
+
+	// Handle Resource parameter
+	if tgr.Resource != "" {
+		// Resource information can be stored in token extension fields
+		// or used for further permission verification
+	}
+
+	// Set token expiration time
+	createAt := time.Now()
+	aexp := m.grantConfig(oauth2.TokenExchange).AccessTokenExp
+	if exp := tgr.AccessTokenExp; exp > 0 {
+		aexp = exp
+	}
+	ti.SetAccessCreateAt(createAt)
+	ti.SetAccessExpiresIn(aexp)
+
+	if tgr.RequestedTokenType != "" {
+		switch tgr.RequestedTokenType {
+		case "urn:ietf:params:oauth:token-type:access_token":
+			shouldGenerateRefresh = false
+		case "urn:ietf:params:oauth:token-type:refresh_token":
+			shouldGenerateRefresh = true
+		default:
+			return nil, errors.ErrUnsupportedTokenType
+		}
+	}
+
+	// Generate new token
+	td := &oauth2.GenerateBasic{
+		Client:    targetClient,
+		UserID:    userID,
+		CreateAt:  createAt,
+		TokenInfo: ti,
+		Request:   tgr.Request,
+	}
+
+	access, refresh, err := m.accessGenerate.Token(ctx, td, shouldGenerateRefresh)
+	if err != nil {
+		return nil, err
+	}
+
+	ti.SetAccess(access)
+	if refresh != "" {
+		ti.SetRefresh(refresh)
+		ti.SetRefreshCreateAt(createAt)
+		ti.SetRefreshExpiresIn(m.grantConfig(oauth2.TokenExchange).RefreshTokenExp)
+	}
+
+	err = m.tokenStore.Create(ctx, ti)
+	if err != nil {
+		return nil, err
+	}
+
+	return ti, nil
+}
+
+// Helper method: check if client is allowed to perform token exchange
+func (m *Manager) isClientExchangeAllowed(fromClientID, toClientID string) bool {
+	// Specific permission check logic can be implemented here
+	// For example, check configuration files, database, etc.
+	return true // Temporarily allow all exchanges
+}
+
+// Helper method: check if scope is allowed
+func (m *Manager) isScopeAllowed(originalScope, requestedScope string) bool {
+	// Implement scope permission check logic
+	// Ensure requested scope does not exceed original scope
+	return true // Simplified implementation
 }

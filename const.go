@@ -28,6 +28,7 @@ const (
 	PasswordCredentials GrantType = "password"
 	ClientCredentials   GrantType = "client_credentials"
 	Refreshing          GrantType = "refresh_token"
+	TokenExchange       GrantType = "urn:ietf:params:oauth:grant-type:token-exchange"
 	Implicit            GrantType = "__implicit"
 )
 
@@ -35,7 +36,8 @@ func (gt GrantType) String() string {
 	if gt == AuthorizationCode ||
 		gt == PasswordCredentials ||
 		gt == ClientCredentials ||
-		gt == Refreshing {
+		gt == Refreshing ||
+		gt == TokenExchange {
 		return string(gt)
 	}
 	return ""

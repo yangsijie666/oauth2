@@ -27,6 +27,7 @@ func NewConfig() *Config {
 			oauth2.PasswordCredentials,
 			oauth2.ClientCredentials,
 			oauth2.Refreshing,
+			oauth2.TokenExchange,
 		},
 		AllowedCodeChallengeMethods: []oauth2.CodeChallengeMethod{
 			oauth2.CodeChallengePlain,
