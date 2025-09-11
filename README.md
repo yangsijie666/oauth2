@@ -125,6 +125,8 @@ go build server.go
 
 - Easy to use
 - Based on the [RFC 6749](https://tools.ietf.org/html/rfc6749) implementation
+- **RFC 8693 Token Exchange support** - Enable secure token exchange between different clients
+- **Multi-domain client support** - Clients can be configured with multiple allowed domains
 - Token storage support TTL
 - Support custom expiration time of the access token
 - Support custom extension field
@@ -136,6 +138,41 @@ go build server.go
 > A complete example of simulation authorization code model
 
 Simulation examples of authorization code model, please check [example](/example)
+
+### RFC 8693 Token Exchange
+
+This implementation supports RFC 8693 Token Exchange, allowing secure token exchange between different clients:
+
+```go
+// Token exchange request
+req := &oauth2.TokenGenerateRequest{
+    ClientID:            "client-a",
+    SubjectToken:        "existing-access-token",
+    SubjectTokenType:    "urn:ietf:params:oauth:token-type:access_token",
+    RequestedTokenType:  "urn:ietf:params:oauth:token-type:access_token",
+    Audience:            "client-b", // Target client
+    Resource:            "https://api.example.com/resource",
+    Scope:               "read write",
+}
+
+// Exchange token
+token, err := manager.ExchangeToken(ctx, req)
+if err != nil {
+    // Handle error
+}
+```
+
+### Multi-Domain Client Configuration
+
+Clients can now be configured with multiple allowed domains:
+
+```go
+clientStore.Set("000000", &models.Client{
+    ID:     "000000",
+    Secret: "999999",
+    Domain: "http://localhost,https://example.com,https://app.example.com",
+})
+```
 
 ### Use jwt to generate access tokens
 
